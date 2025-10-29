@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use macroquad::window::Conf;
 
 const PLAYER_SIZE: Vec2 = Vec2::new(32.0, 48.0);
 const PLAYER_SPEED: f32 = 200.0;
@@ -26,9 +27,9 @@ struct Enemy {
 }
 
 impl Player {
-    fn new() -> Self {
+    fn new(start_y: f32) -> Self {
         Self {
-            pos: Vec2::new(100.0, 100.0),
+            pos: Vec2::new(100.0, start_y),
             velocity: Vec2::ZERO,
             grounded: false,
             facing_right: true,
@@ -204,11 +205,24 @@ impl Enemy {
     }
 }
 
-#[macroquad::main("MapleStory-style Side Scroller")]
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "MapleStory-style Side Scroller".to_owned(),
+        window_width: 1280,
+        window_height: 720,
+        high_dpi: true,
+        ..Default::default()
+    }
+}
+
+#[macroquad::main(window_conf)]
 async fn main() {
-    let mut player = Player::new();
-    
-    // Create platforms
+    // Ensure the window is initialized and we have valid dimensions before using screen_* APIs
+    while screen_width() <= 0.0 || screen_height() <= 0.0 {
+        next_frame().await;
+    }
+
+    // Create platforms after window size is ready
     let mut platforms = vec![
         Platform {
             rect: Rect::new(0.0, screen_height() - 40.0, screen_width(), 40.0),
@@ -227,26 +241,32 @@ async fn main() {
         },
     ];
 
-    // Create enemies
+    // Create player starting on the ground
+    let ground_y = screen_height() - 40.0 - PLAYER_SIZE.y;
+    let mut player = Player::new(ground_y);
+
+    // Create enemies after window size is ready
     let mut enemies = vec![
         Enemy::new(400.0, screen_height() - 250.0),
         Enemy::new(700.0, screen_height() - 200.0),
         Enemy::new(1100.0, screen_height() - 350.0),
     ];
 
-    let mut camera_x = 0.0;
-
     loop {
         clear_background(SKYBLUE);
 
         let dt = get_frame_time();
 
-        // Update camera to follow player
-        camera_x = (player.pos.x - screen_width() / 2.0).max(0.0);
+        // Update camera to follow player horizontally
+        // Camera centers on player horizontally, but doesn't scroll until player moves past center
+        let min_camera_x = screen_width() / 2.0;
+        let camera_x = player.pos.x.max(min_camera_x);
         
-        // Set camera transform
+        // Set camera to follow player (world coordinates)
+        // The target is where the camera looks - it centers on this point
+        // Keep Y fixed at screen center for side-scrolling effect
         set_camera(&Camera2D {
-            target: vec2(camera_x + screen_width() / 2.0, screen_height() / 2.0),
+            target: vec2(camera_x, screen_height() / 2.0),
             rotation: 0.0,
             zoom: vec2(1.0, 1.0),
             ..Default::default()
@@ -275,16 +295,13 @@ async fn main() {
             enemy.draw();
         }
 
-        // Draw UI (should not be affected by camera)
-        set_camera(&Camera2D {
-            target: vec2(screen_width() / 2.0, screen_height() / 2.0),
-            rotation: 0.0,
-            zoom: vec2(1.0, 1.0),
-            ..Default::default()
-        });
+        // Reset camera for UI (screen coordinates)
+        set_default_camera();
 
-        // Draw instructions
+        // Draw instructions + basic debug info
         draw_text("WASD / Arrow Keys to move, Space to jump", 10.0, 30.0, 20.0, WHITE);
+        let dbg = format!("res: {:.0}x{:.0}  player: ({:.0}, {:.0})", screen_width(), screen_height(), player.pos.x, player.pos.y);
+        draw_text(&dbg, 10.0, 54.0, 18.0, GRAY);
 
         next_frame().await;
     }
